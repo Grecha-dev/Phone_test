@@ -1,0 +1,13 @@
+{
+    "display_name": "Телефон",
+    "loading_order": 12,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "Delidgi1",
+    "version": "2.15.0",
+    "homePage": "https://github.com/Delidgi-meow/Phone-ST",
+    "source": "https://github.com/Delidgi-meow/Phone-ST",
+    "auto_update": false
+}
