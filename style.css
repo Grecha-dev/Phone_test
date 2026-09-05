@@ -168,8 +168,6 @@
     z-index: 2147482899;
     width: 42px;
     overflow: hidden;
-    display: flex;
-    justify-content: center;
     border-radius: 12px;
     background: rgba(15, 14, 20, 0.55);
     border: 1px solid rgba(255, 255, 255, 0.10);
@@ -178,26 +176,33 @@
     -webkit-mask-image: linear-gradient(to bottom, #000 84%, transparent 100%);
     mask-image: linear-gradient(to bottom, #000 84%, transparent 100%);
     animation: gpLyrIn .25s ease;
+    text-align: center;
 }
 @keyframes gpLyrIn {
     from { opacity: 0; transform: scaleY(0.4); transform-origin: top; }
     to { opacity: 1; transform: scaleY(1); transform-origin: top; }
 }
-/* Столбики текста: текущая строка яркая справа, следующая — тусклая слева */
+/* Столбики текста: без флекса! (flex + writing-mode меняет оси и схлопывает
+   колонки в полоску). В vertical-rl inline-block'и сами встают колонками справа налево. */
 #gp-lyric-lines {
     writing-mode: vertical-rl;
     text-orientation: upright;
-    display: flex;
-    flex-direction: row;
-    gap: 3px;
+    white-space: nowrap;
+    display: inline-block;
+    height: 100%;
     padding: 10px 0;
+    box-sizing: border-box;
+    text-align: left;
 }
 .gp-lyr-vcol {
+    display: inline-block;
+    vertical-align: top;
     white-space: nowrap;
     font-size: 12px;
     letter-spacing: 2px;
     color: #fff;
     font-weight: 600;
+    margin-left: 3px;
 }
 .gp-lyr-vcol.next {
     color: rgba(255, 255, 255, 0.32);
@@ -211,8 +216,8 @@
     to { transform: translateY(0); opacity: 1; }
 }
 .gp-lyr-plain {
-    writing-mode: vertical-rl;
-    text-orientation: upright;
+    display: inline-block;
+    vertical-align: top;
     white-space: nowrap;
     color: rgba(255, 255, 255, 0.75);
     font-size: 11px;
