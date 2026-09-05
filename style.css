@@ -144,7 +144,7 @@
 /* Скрытие настройкой «Плавающая кнопка»: id+class перебивает #gp-fab{display:flex!important} */
 #gp-fab.gp-hidden { display: none !important; }
 
-/* Караоке: кнопка текста под FAB и бегущая вертикальная строка */
+/* Караоке: кнопка текста под FAB и вертикальная бегущая лента до края экрана */
 #gp-lyric-btn {
     position: fixed;
     z-index: 2147482901;
@@ -166,39 +166,58 @@
 #gp-lyric-strip {
     position: fixed;
     z-index: 2147482899;
-    width: 220px;
-    max-height: 180px;
+    width: 42px;
     overflow: hidden;
-    padding: 10px 12px;
-    border-radius: 14px;
-    background: rgba(15, 14, 20, 0.82);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    display: flex;
+    justify-content: center;
+    border-radius: 12px;
+    background: rgba(15, 14, 20, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    -webkit-mask-image: linear-gradient(to bottom, #000 84%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 84%, transparent 100%);
     animation: gpLyrIn .25s ease;
 }
 @keyframes gpLyrIn {
-    from { opacity: 0; transform: translateY(-6px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; transform: scaleY(0.4); transform-origin: top; }
+    to { opacity: 1; transform: scaleY(1); transform-origin: top; }
 }
-.gp-lyr-line {
-    color: rgba(255, 255, 255, 0.42);
-    font-size: 12px;
-    line-height: 1.55;
+/* Столбики текста: текущая строка яркая справа, следующая — тусклая слева */
+#gp-lyric-lines {
+    writing-mode: vertical-rl;
+    text-orientation: upright;
+    display: flex;
+    flex-direction: row;
+    gap: 3px;
+    padding: 10px 0;
+}
+.gp-lyr-vcol {
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    transition: color .3s, font-weight .3s;
-}
-.gp-lyr-line.cur { color: #fff; font-weight: 600; }
-.gp-lyr-plain {
-    color: rgba(255, 255, 255, 0.75);
     font-size: 12px;
-    line-height: 1.55;
-    white-space: pre-wrap;
-    max-height: 158px;
-    overflow-y: auto;
+    letter-spacing: 2px;
+    color: #fff;
+    font-weight: 600;
+}
+.gp-lyr-vcol.next {
+    color: rgba(255, 255, 255, 0.32);
+    font-weight: 400;
+    font-size: 11px;
+    letter-spacing: 1px;
+}
+.gp-lyr-anim { animation: gpLyrSlide .45s ease; }
+@keyframes gpLyrSlide {
+    from { transform: translateY(-16px); opacity: 0.2; }
+    to { transform: translateY(0); opacity: 1; }
+}
+.gp-lyr-plain {
+    writing-mode: vertical-rl;
+    text-orientation: upright;
+    white-space: nowrap;
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 11px;
+    letter-spacing: 1px;
+    overflow: hidden;
 }
 
 /* Полупрозрачный силуэт без уведомлений (только на устройствах с курсором) */

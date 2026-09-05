@@ -161,15 +161,15 @@ async function loadLyricsFor(track) {
 function renderLyricWindow() {
     const box = document.getElementById('gp-lyric-lines');
     if (!box) return;
-    const WIN = 2;
-    let html = '';
-    for (let i = lyricShownIdx - WIN; i <= lyricShownIdx + WIN; i++) {
-        const line = lyricLines[i];
-        html += line
-            ? `<div class="gp-lyr-line${i === lyricShownIdx ? ' cur' : ''}">${escHtml(line.text)}</div>`
-            : '<div class="gp-lyr-line">&nbsp;</div>';
-    }
-    box.innerHTML = html;
+    const cur = lyricLines[lyricShownIdx];
+    const next = lyricLines[lyricShownIdx + 1];
+    box.innerHTML =
+        `<div class="gp-lyr-vcol cur">${escHtml(cur?.text || '')}</div>` +
+        (next ? `<div class="gp-lyr-vcol next">${escHtml(next.text)}</div>` : '');
+    // перезапуск slide-анимации на смену строки
+    box.classList.remove('gp-lyr-anim');
+    void box.offsetWidth;
+    box.classList.add('gp-lyr-anim');
 }
 
 // Видимость/позиция караоке-виджетов относительно FAB (вызывается из тикера)
@@ -189,9 +189,16 @@ function tickLyricsWidgets(t) {
     btn.style.left = `${fl + 9}px`;
     btn.style.top = `${ft + 54}px`;
     if (!showStrip) return;
-    const w = 220, vw = window.innerWidth, vh = window.innerHeight;
-    strip.style.left = `${Math.max(8, Math.min(fl - (w - 48) / 2, vw - w - 8))}px`;
-    strip.style.top = `${Math.min(ft + 92, vh - 196)}px`;
+    // Лента: свисает от FAB до края экрана (вниз; если FAB низко — вверх)
+    const vw = window.innerWidth, vh = window.innerHeight;
+    strip.style.left = `${Math.max(4, Math.min(fl + 3, vw - 46))}px`;
+    if (ft + 260 < vh) {
+        strip.style.top = `${ft + 92}px`;
+        strip.style.bottom = '8px';
+    } else {
+        strip.style.top = '8px';
+        strip.style.bottom = `${vh - ft - 6}px`;
+    }
 }
 
 // Подсветка текущей строки по позиции воспроизведения (вызывается из тикера)
