@@ -144,6 +144,63 @@
 /* Скрытие настройкой «Плавающая кнопка»: id+class перебивает #gp-fab{display:flex!important} */
 #gp-fab.gp-hidden { display: none !important; }
 
+/* Караоке: кнопка текста под FAB и бегущая вертикальная строка */
+#gp-lyric-btn {
+    position: fixed;
+    z-index: 2147482901;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(20, 18, 26, 0.85);
+    color: var(--gp-text, #fff);
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+#gp-lyric-btn:active { transform: scale(0.92); }
+#gp-lyric-strip {
+    position: fixed;
+    z-index: 2147482899;
+    width: 220px;
+    max-height: 180px;
+    overflow: hidden;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(15, 14, 20, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    animation: gpLyrIn .25s ease;
+}
+@keyframes gpLyrIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.gp-lyr-line {
+    color: rgba(255, 255, 255, 0.42);
+    font-size: 12px;
+    line-height: 1.55;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: color .3s, font-weight .3s;
+}
+.gp-lyr-line.cur { color: #fff; font-weight: 600; }
+.gp-lyr-plain {
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 12px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    max-height: 158px;
+    overflow-y: auto;
+}
+
 /* Полупрозрачный силуэт без уведомлений (только на устройствах с курсором) */
 @media (hover: hover) {
     #gp-fab.gp-fab-idle { opacity: 0.35; }

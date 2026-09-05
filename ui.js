@@ -14,7 +14,7 @@ import {
     getBankReminders, spendingByCategory, incomeExpenseTotals, bankBadgeCount, setCurrency, convertCurrency,
 } from './bank.js';
 import { SHOP_CATS, catById, getCategory, generateCategory, buyItem, getOrders, deleteOrder, getCustomCats, addCustomCat, delCustomCat, advanceOrders, orderLeft, fmtEta, findOrder, ensureCourier, orderChat, courierUnread, markCourierRead, writeToCourier, courierArrived, searchShopItems } from './shop.js';
-import { getMusicState, getMusicCfg, setMusicKeys, setMusicSourceEnabled, setMoodPrefs, searchMusic, playTrack, playIndex, togglePlay, nextTrack, prevTrack, removeAt, clearQueue, seekFrac, setVolume, searchRadioStations, playRadioStation, pickForScene, onMusicChange, enqueue, SOMA_STATIONS } from './music.js';
+import { getMusicState, getMusicCfg, setMusicKeys, setMusicSourceEnabled, setMoodPrefs, toggleLyrics, searchMusic, playTrack, playIndex, togglePlay, nextTrack, prevTrack, removeAt, clearQueue, seekFrac, setVolume, searchRadioStations, playRadioStation, pickForScene, onMusicChange, enqueue, SOMA_STATIONS } from './music.js';
 import {
     getTweets, getIgPosts, postTweet, likeTweet, rtTweet, delTweet, addTweetReply, delTweetReply,
     postIg, likeIg, delIg, addIgComment, delIgComment,
@@ -150,6 +150,24 @@ function createFab() {
     fab.id = 'gp-fab';
     fab.innerHTML = `${ic('fa-mobile-screen-button')}<span id="gp-fab-badge" class="gp-hidden"></span>`;
     document.body.appendChild(fab);
+
+    // Караоке-виджеты: кнопка-тоггл под FAB и узкая вертикальная строка текста песни.
+    // Видимостью/позицией/строками рулит тикер в music.js (DOM напрямую, без перерисовок).
+    if (!document.getElementById('gp-lyric-btn')) {
+        const btn = document.createElement('button');
+        btn.id = 'gp-lyric-btn';
+        btn.className = 'gp-hidden';
+        btn.type = 'button';
+        btn.title = 'Текст песни';
+        btn.innerHTML = ic('fa-align-left');
+        btn.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); toggleLyrics(); });
+        document.body.appendChild(btn);
+        const strip = document.createElement('div');
+        strip.id = 'gp-lyric-strip';
+        strip.className = 'gp-hidden';
+        strip.innerHTML = '<div id="gp-lyric-lines"></div>';
+        document.body.appendChild(strip);
+    }
 
     // Позиция: сохранённая ВСЕГДА зажимается в текущий вьюпорт (позиция с широкого
     // монитора не должна уносить кнопку за экран телефона). Дефолт — правый край.

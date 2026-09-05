@@ -43,14 +43,14 @@ export const SOMA_STATIONS = [
 ];
 
 // ── Конфиг: ключи API, громкость, включённые источники ──
-let cfg = { jamendoKey: '', ytKey: '', volume: 0.8, sources: { gds: true, jamendo: true, youtube: true }, moodVocal: 'any', moodLang: 'any' };
+let cfg = { jamendoKey: '', ytKey: '', volume: 0.8, sources: { gds: true, jamendo: true, youtube: true }, moodVocal: 'any', moodLang: 'any', lyricsOn: false };
 try { cfg = Object.assign(cfg, JSON.parse(localStorage.getItem(LS_CFG) || '{}')); } catch (_) {}
 if (!cfg.sources || typeof cfg.sources !== 'object') cfg.sources = { gds: true, jamendo: true, youtube: true };
 if (!['any', 'vocal', 'instrumental'].includes(cfg.moodVocal)) cfg.moodVocal = 'any';
 if (!['any', 'ru', 'en', 'other'].includes(cfg.moodLang)) cfg.moodLang = 'any';
 
 function saveCfg() { try { localStorage.setItem(LS_CFG, JSON.stringify(cfg)); } catch (_) {} }
-export function getMusicCfg() { return { jamendoKey: cfg.jamendoKey, ytKey: cfg.ytKey, volume: cfg.volume, sources: { ...cfg.sources }, moodVocal: cfg.moodVocal, moodLang: cfg.moodLang }; }
+export function getMusicCfg() { return { jamendoKey: cfg.jamendoKey, ytKey: cfg.ytKey, volume: cfg.volume, sources: { ...cfg.sources }, moodVocal: cfg.moodVocal, moodLang: cfg.moodLang, lyricsOn: !!cfg.lyricsOn }; }
 // Предпочтения для ✨-подбора под сцену: голос (any|vocal|instrumental), язык (any|ru|en|other)
 export function setMoodPrefs({ vocal, lang } = {}) {
     if (vocal !== undefined && ['any', 'vocal', 'instrumental'].includes(vocal)) { cfg.moodVocal = vocal; saveCfg(); }
@@ -104,9 +104,122 @@ export function fmtTime(sec) {
     return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+// ── Тексты песен: LRC c таймкодами (GDStudio → lrclib), караоке-строка у FAB ──
+let lyricLines = [];        // [{t, text}] отсортировано по времени
+let lyricPlain = null;      // несинхронный текст — фолбэк
+let lyricTrackKey = '';     // для какого трека грузили (защита от гонки)
+let lyricShownIdx = -1;
+let lyricPlainShown = false;
+
+const escHtml = (x) => String(x).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function parseLrc(lrc) {
+    const out = [];
+    const re = /\[(\d+):(\d+(?:[.,]\d+)?)\]/g;
+    for (const raw of String(lrc || '').split('\n')) {
+        const text = raw.replace(re, '').trim();
+        if (!text) continue;
+        let m; re.lastIndex = 0;
+        while ((m = re.exec(raw))) {
+            out.push({ t: parseInt(m[1], 10) * 60 + parseFloat(m[2].replace(',', '.')), text });
+        }
+    }
+    return out.sort((a, b) => a.t - b.t);
+}
+
+async function fetchLyricsGds(track) {
+    const r = await fetch(`${GDS_API}?types=lyric&source=${encodeURIComponent(track.gdsSource || 'netease')}&id=${encodeURIComponent(track.gdsId)}`);
+    if (!r.ok) return null;
+    const j = await r.json().catch(() => null);
+    return j?.lyric || null;
+}
+
+async function fetchLyricsLrclib(track) {
+    if (!track.artist || !track.title) return null;
+    const u = `https://lrclib.net/api/get?artist_name=${encodeURIComponent(track.artist)}&track_name=${encodeURIComponent(track.title)}`;
+    const r = await fetch(u);
+    if (!r.ok) return null;
+    const j = await r.json().catch(() => null);
+    return j?.syncedLyrics || j?.plainLyrics || null;
+}
+
+async function loadLyricsFor(track) {
+    const key = `${track.kind}:${track.gdsId || track.ytid || track.url || track.title}`;
+    lyricTrackKey = key;
+    let lrc = null;
+    if (track.kind === 'gds') lrc = await fetchLyricsGds(track).catch(() => null);
+    if (!lrc) lrc = await fetchLyricsLrclib(track).catch(() => null);
+    if (lyricTrackKey !== key) return;   // трек сменился, пока грузили
+    if (lrc) {
+        const lines = parseLrc(lrc);
+        if (lines.length >= 3) lyricLines = lines;
+        else lyricPlain = String(lrc).replace(/\[\d+:[^\]]*\]/g, '').trim() || null;
+    }
+    emit();
+}
+
+function renderLyricWindow() {
+    const box = document.getElementById('gp-lyric-lines');
+    if (!box) return;
+    const WIN = 2;
+    let html = '';
+    for (let i = lyricShownIdx - WIN; i <= lyricShownIdx + WIN; i++) {
+        const line = lyricLines[i];
+        html += line
+            ? `<div class="gp-lyr-line${i === lyricShownIdx ? ' cur' : ''}">${escHtml(line.text)}</div>`
+            : '<div class="gp-lyr-line">&nbsp;</div>';
+    }
+    box.innerHTML = html;
+}
+
+// Видимость/позиция караоке-виджетов относительно FAB (вызывается из тикера)
+function tickLyricsWidgets(t) {
+    const btn = document.getElementById('gp-lyric-btn');
+    const strip = document.getElementById('gp-lyric-strip');
+    if (!btn || !strip) return;
+    const fab = document.getElementById('gp-fab');
+    const fabVisible = !!(fab && fab.offsetParent !== null);
+    const hasLyr = lyricLines.length > 0 || !!lyricPlain;
+    const showBtn = !!(fabVisible && t && t.kind !== 'radio' && hasLyr);
+    btn.classList.toggle('gp-hidden', !showBtn);
+    const showStrip = showBtn && !!cfg.lyricsOn;
+    strip.classList.toggle('gp-hidden', !showStrip);
+    if (!fabVisible || !showBtn) return;
+    const fl = fab.offsetLeft, ft = fab.offsetTop;
+    btn.style.left = `${fl + 9}px`;
+    btn.style.top = `${ft + 54}px`;
+    if (!showStrip) return;
+    const w = 220, vw = window.innerWidth, vh = window.innerHeight;
+    strip.style.left = `${Math.max(8, Math.min(fl - (w - 48) / 2, vw - w - 8))}px`;
+    strip.style.top = `${Math.min(ft + 92, vh - 196)}px`;
+}
+
+// Подсветка текущей строки по позиции воспроизведения (вызывается из тикера)
+function tickLyricLines(cur) {
+    if (!cfg.lyricsOn) return;
+    if (lyricLines.length) {
+        let idx = 0;
+        while (idx + 1 < lyricLines.length && lyricLines[idx + 1].t <= cur) idx++;
+        if (idx !== lyricShownIdx) { lyricShownIdx = idx; renderLyricWindow(); }
+    } else if (lyricPlain && !lyricPlainShown) {
+        lyricPlainShown = true;
+        const box = document.getElementById('gp-lyric-lines');
+        if (box) box.innerHTML = `<div class="gp-lyr-plain">${escHtml(lyricPlain)}</div>`;
+    }
+}
+
+export function toggleLyrics(on) {
+    cfg.lyricsOn = on === undefined ? !cfg.lyricsOn : !!on;
+    lyricShownIdx = -1; lyricPlainShown = false;
+    saveCfg();
+    emit();
+}
+export function getLyricsInfo() { return { on: !!cfg.lyricsOn, synced: lyricLines.length, plain: !!lyricPlain }; }
+
 // ── Тикер прогресса: дёргает DOM напрямую, без перерисовки экрана ──
 setInterval(() => {
     const t = curIdx >= 0 ? queue[curIdx] : null;
+    tickLyricsWidgets(t);
     if (!t) return;
     let cur = 0, dur = 0;
     if (t.kind === 'radio') { /* LIVE */ }
@@ -115,6 +228,7 @@ setInterval(() => {
             try { cur = ytPlayer.getCurrentTime() || 0; dur = ytPlayer.getDuration() || 0; } catch (_) {}
         }
     } else { cur = audio.currentTime || 0; dur = audio.duration || 0; }
+    tickLyricLines(cur);
     const elC = document.getElementById('gp-mus-cur');
     const elD = document.getElementById('gp-mus-dur');
     const elF = document.getElementById('gp-mus-bar-fill');
@@ -212,6 +326,9 @@ async function playCurrent() {
     if (!t) { playing = false; emit(); return; }
     stopAll();
     statusMsg = '';
+    // Сброс и фоновая загрузка текста песни (караоке-строка у FAB)
+    lyricLines = []; lyricPlain = null; lyricTrackKey = ''; lyricShownIdx = -1; lyricPlainShown = false;
+    if (t.kind !== 'radio') loadLyricsFor(t);   // намеренно без await — не блокируем старт
     try {
         if (t.kind === 'gds') {
             statusMsg = 'Загружаю…';
