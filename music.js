@@ -5,6 +5,8 @@ import { generateSceneMood } from './social.js';
 const LS_CFG = 'gp_music_cfg_v1';
 const LS_QUEUE = 'gp_music_queue_v1';
 const DEFAULT_JAMENDO_KEY = '6fcc94f7';
+const GDS_API = 'https://music-api.gdstudio.xyz/api.php';
+const GDS_SOURCES = ['netease', 'kuwo'];   // что реально поддержано на инстансе
 const INVIDIOUS = ['https://inv.nadeko.net', 'https://invidious.nerdvpn.de', 'https://invidious.f5.si'];
 
 export const SOMA_STATIONS = [
@@ -40,15 +42,20 @@ export const SOMA_STATIONS = [
     { name: 'Covers', url: 'https://ice1.somafm.com/covers-128-mp3', tag: 'каверы/разное' },
 ];
 
-// ── Конфиг: ключи API + громкость ──
-let cfg = { jamendoKey: '', ytKey: '', volume: 0.8 };
+// ── Конфиг: ключи API, громкость, включённые источники ──
+let cfg = { jamendoKey: '', ytKey: '', volume: 0.8, sources: { gds: true, jamendo: true, youtube: true } };
 try { cfg = Object.assign(cfg, JSON.parse(localStorage.getItem(LS_CFG) || '{}')); } catch (_) {}
+if (!cfg.sources || typeof cfg.sources !== 'object') cfg.sources = { gds: true, jamendo: true, youtube: true };
 
 function saveCfg() { try { localStorage.setItem(LS_CFG, JSON.stringify(cfg)); } catch (_) {} }
-export function getMusicCfg() { return { jamendoKey: cfg.jamendoKey, ytKey: cfg.ytKey, volume: cfg.volume }; }
+export function getMusicCfg() { return { jamendoKey: cfg.jamendoKey, ytKey: cfg.ytKey, volume: cfg.volume, sources: { ...cfg.sources } }; }
 export function setMusicKeys({ jamendoKey, ytKey }) {
     if (jamendoKey !== undefined) cfg.jamendoKey = String(jamendoKey).trim();
     if (ytKey !== undefined) cfg.ytKey = String(ytKey).trim();
+    saveCfg();
+}
+export function setMusicSourceEnabled(name, on) {
+    cfg.sources[name] = !!on;
     saveCfg();
 }
 const jamKey = () => cfg.jamendoKey || DEFAULT_JAMENDO_KEY;
@@ -199,7 +206,23 @@ async function playCurrent() {
     stopAll();
     statusMsg = '';
     try {
-        if (t.kind === 'yt') {
+        if (t.kind === 'gds') {
+            statusMsg = 'Загружаю…';
+            emit();
+            const url = await resolveGdsUrl(t).catch(() => null);
+            if (queue[curIdx] !== t) return;   // трек сменили, пока резолвили
+            if (!url) {
+                statusMsg = 'Трек недоступен — попробуй другой';
+                playing = false;
+                emit();
+                return;
+            }
+            audio.src = url;
+            audio.volume = cfg.volume;
+            audio.loop = false;
+            await audio.play();
+            statusMsg = '';
+        } else if (t.kind === 'yt') {
             statusMsg = 'Проверяю ролик…';
             emit();
             let ok = await checkYtEmbeddable(t.ytid).catch(() => false);
@@ -385,6 +408,35 @@ async function searchYouTube(query, limit = 10) {
     return [];
 }
 
+// ── GDStudio: агрегатор NetEase/Kuwo — полные треки, мейнстрим, без ключа ──
+const _gdsUrlCache = new Map();   // `${source}:${id}` -> {url, at}
+async function resolveGdsUrl(t) {
+    const key = `${t.gdsSource}:${t.gdsId}`;
+    const cached = _gdsUrlCache.get(key);
+    if (cached && Date.now() - cached.at < 10 * 60 * 1000) return cached.url;
+    const data = await fetchJson(`${GDS_API}?types=url&source=${encodeURIComponent(t.gdsSource)}&id=${encodeURIComponent(t.gdsId)}&br=128`, 8000);
+    if (!data?.url) return null;
+    _gdsUrlCache.set(key, { url: data.url, at: Date.now() });
+    return data.url;
+}
+
+async function searchGDStudio(query, limit = 12) {
+    for (const src of GDS_SOURCES) {
+        try {
+            const data = await fetchJson(`${GDS_API}?types=search&source=${src}&name=${encodeURIComponent(query)}&count=${limit}`, 8000);
+            if (Array.isArray(data) && data.length) {
+                return data.map(t => ({
+                    kind: 'gds', gdsId: String(t.url_id || t.id), gdsSource: src,
+                    title: t.name || query,
+                    artist: Array.isArray(t.artist) ? t.artist.join(', ') : (t.artist || ''),
+                    source: src === 'netease' ? 'NetEase' : 'Kuwo',
+                }));
+            }
+        } catch (_) {}
+    }
+    return [];
+}
+
 function parseYtLink(query) {
     const mVid = query.match(/(?:youtu\.be\/|[?&]v=|shorts\/)([\w-]{11})/);
     if (mVid) return { kind: 'yt', ytid: mVid[1], title: 'YouTube видео', artist: mVid[1], source: 'YT-ссылка' };
@@ -405,6 +457,9 @@ export async function searchMusic(query, source) {
             statusMsg = link.kind === 'ytlist' ? 'Плейлисты не поддерживаю — кинь ссылку на видео' : '';
         } else if (source === 'jamendo') {
             searchResults = await searchJamendo(q);
+            statusMsg = searchResults.length ? '' : 'Ничего не найдено';
+        } else if (source === 'gds') {
+            searchResults = await searchGDStudio(q);
             statusMsg = searchResults.length ? '' : 'Ничего не найдено';
         } else {
             searchResults = await searchYouTube(q);
@@ -466,10 +521,14 @@ export async function pickForScene() {
         const arr = await generateSceneMood();
         const pick = arr?.[0];
         if (!pick?.query) throw new Error('no_pick');
-        // Для ютуба лучше ищутся «topic»-аудио — они же и встраиваемые чаще всего
-        let found = await searchYouTube(pick.query + ' topic', 8).catch(() => []);
-        if (!found.length) found = await searchYouTube(pick.query, 8).catch(() => []);
-        if (!found.length) found = await searchJamendo(pick.query, 1).catch(() => []);
+        // Порядок: GDStudio (полные треки, мейнстрим) → Jamendo → YouTube; выключенные тумблерами пропускаем
+        let found = [];
+        if (cfg.sources.gds) found = await searchGDStudio(pick.query, 3).catch(() => []);
+        if (!found.length && cfg.sources.jamendo) found = await searchJamendo(pick.query, 1).catch(() => []);
+        if (!found.length && cfg.sources.youtube) {
+            found = await searchYouTube(pick.query + ' topic', 8).catch(() => []);
+            if (!found.length) found = await searchYouTube(pick.query, 8).catch(() => []);
+        }
         if (!found.length) throw new Error('not_found');
         playTrack(found[0]);
         statusMsg = '';

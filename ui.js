@@ -14,7 +14,7 @@ import {
     getBankReminders, spendingByCategory, incomeExpenseTotals, bankBadgeCount, setCurrency, convertCurrency,
 } from './bank.js';
 import { SHOP_CATS, catById, getCategory, generateCategory, buyItem, getOrders, deleteOrder, getCustomCats, addCustomCat, delCustomCat, advanceOrders, orderLeft, fmtEta, findOrder, ensureCourier, orderChat, courierUnread, markCourierRead, writeToCourier, courierArrived, searchShopItems } from './shop.js';
-import { getMusicState, getMusicCfg, setMusicKeys, searchMusic, playTrack, playIndex, togglePlay, nextTrack, prevTrack, removeAt, clearQueue, seekFrac, setVolume, searchRadioStations, playRadioStation, pickForScene, onMusicChange, enqueue, SOMA_STATIONS } from './music.js';
+import { getMusicState, getMusicCfg, setMusicKeys, setMusicSourceEnabled, searchMusic, playTrack, playIndex, togglePlay, nextTrack, prevTrack, removeAt, clearQueue, seekFrac, setVolume, searchRadioStations, playRadioStation, pickForScene, onMusicChange, enqueue, SOMA_STATIONS } from './music.js';
 import {
     getTweets, getIgPosts, postTweet, likeTweet, rtTweet, delTweet, addTweetReply, delTweetReply,
     postIg, likeIg, delIg, addIgComment, delIgComment,
@@ -622,7 +622,7 @@ const BLEED_SCREENS = new Set(['discord', 'dchannel', 'twitch', 'stream', 'mystr
 
 // ═══ Музыка ═══
 let _musTab = 'search';       // search | queue | radio
-let _musSource = 'youtube';   // youtube | jamendo
+let _musSource = 'gds';         // gds (NetEase) | youtube | jamendo
 let _musQuery = '';
 let _musRadioQuery = '';
 
@@ -650,13 +650,20 @@ function renderMusic(screen) {
                 <button class="gp-iconbtn" id="gp-mus-go" title="Искать" ${st.searching ? 'disabled' : ''}>${st.searching ? ic('fa-spinner fa-spin') : ic('fa-arrow-right')}</button>
             </div>
             <div class="gp-mus-srcs">
+                <button class="gp-mus-src${_musSource === 'gds' ? ' on' : ''}" data-src="gds">NetEase</button>
                 <button class="gp-mus-src${_musSource === 'youtube' ? ' on' : ''}" data-src="youtube">YouTube</button>
                 <button class="gp-mus-src${_musSource === 'jamendo' ? ' on' : ''}" data-src="jamendo">Jamendo</button>
             </div>
             ${st.statusMsg ? `<div class="gp-empty-text" style="padding:8px;text-align:center">${esc(st.statusMsg)}</div>` : ''}
             ${rows}
             <div class="gp-mus-keys">
-                <div class="gp-mus-keys-title">${ic('fa-key')} API-ключи</div>
+                <div class="gp-mus-keys-title">${ic('fa-wand-magic-sparkles')} Подбор под сцену ищет в:</div>
+                <div class="gp-mus-srcs" style="margin:6px 0 0">
+                    <button class="gp-mus-src${cfg.sources.gds ? ' on' : ''}" data-toggle-src="gds">NetEase</button>
+                    <button class="gp-mus-src${cfg.sources.youtube ? ' on' : ''}" data-toggle-src="youtube">YouTube</button>
+                    <button class="gp-mus-src${cfg.sources.jamendo ? ' on' : ''}" data-toggle-src="jamendo">Jamendo</button>
+                </div>
+                <div class="gp-mus-keys-title" style="margin-top:10px">${ic('fa-key')} API-ключи</div>
                 <input id="gp-mus-key-jam" type="text" placeholder="Jamendo Client ID" value="${esc(cfg.jamendoKey)}" autocomplete="off">
                 <input id="gp-mus-key-yt" type="text" placeholder="YouTube API key (пусто = Invidious)" value="${esc(cfg.ytKey)}" autocomplete="off">
             </div>`;
@@ -764,6 +771,11 @@ function renderMusic(screen) {
         if (t) { playRadioStation(t); toast((t.title || t.name).slice(0, 40), 'fa-radio'); }
     }));
 
+    screen.querySelectorAll('[data-toggle-src]').forEach(b => b.addEventListener('click', () => {
+        const name = b.getAttribute('data-toggle-src');
+        setMusicSourceEnabled(name, !getMusicCfg().sources[name]);
+        render();
+    }));
     screen.querySelector('#gp-mus-pick')?.addEventListener('click', async () => {
         const r = await pickForScene();
         if (r) toast(`${r.mood ? r.mood + ' → ' : ''}${r.track.title.slice(0, 40)}`, 'fa-wand-magic-sparkles');
