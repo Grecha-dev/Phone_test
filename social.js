@@ -1066,6 +1066,24 @@ function profileInfo(profileId) {
     };
 }
 
+// Прямой запрос к провайдеру со СВОИМ ключом из настроек телефона.
+// Не трогает глобальные секреты ST → чат и телефон работают параллельно, без гонки ключей.
+async function directRequest(built, messages, maxTokens, apiKey) {
+    const base = String(built.profile['api-url'] || '').replace(/\/+$/, '');
+    if (!base) throw new Error('У профиля нет «api-url» — прямой режим невозможен');
+    if (!built.profile.model) throw new Error('У профиля не указана модель');
+    const res = await fetch(`${base}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({ model: built.profile.model, messages, max_tokens: maxTokens, stream: false }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.error) throw new Error(String(json.error?.message || `HTTP ${res.status}`));
+    let content = json.choices?.[0]?.message?.content ?? json.choices?.[0]?.text ?? '';
+    if (Array.isArray(content)) content = content.map(p => p?.text || '').join('');
+    return { content: String(content), info: `${built.info} · direct` };
+}
+
 async function profileRequest(profileId, messages, maxTokens) {
     const ctx = SillyTavern.getContext();
     const cm = ctx?.ConnectionManagerRequestService;
@@ -1172,8 +1190,12 @@ async function socialGen(prompt, { maxTokens = 1024, image = null, prefill = '' 
         }
         try {
             const built = profileInfo(profileId);
-            logReq('запрос (профиль)', `${built?.info || profileId}${image ? ' + фото' : ''}${usePrefill ? ' · assistant-prefill' : ''}${useFigureSpaces ? ' · U+2007' : ''} · max ${maxTokens}`);
-            const res = await profileRequest(profileId, requestMessages, maxTokens);
+            const directKey = String(st.directApiKey || '').trim();
+            const useDirect = !!(directKey && !image && built?.profile?.['api-url']);
+            logReq('запрос (профиль)', `${built?.info || profileId}${useDirect ? ' · direct' : ''}${image ? ' + фото' : ''}${usePrefill ? ' · assistant-prefill' : ''}${useFigureSpaces ? ' · U+2007' : ''} · max ${maxTokens}`);
+            const res = useDirect
+                ? await directRequest(built, requestMessages, maxTokens, directKey)
+                : await profileRequest(profileId, requestMessages, maxTokens);
             logOk('ответ (профиль)', `${String(res.content || '').length} симв.`);
             return finish(res.content);
         } catch (e) {
@@ -1263,8 +1285,11 @@ export async function testSocialProfile() {
     const st = getSettings();
     if (!st.socialProfileId) throw new Error('Профиль не выбран (стоит «Текущий API»)');
     const built = profileInfo(st.socialProfileId);
+    const directKey = String(st.directApiKey || '').trim();
     try {
-        const res = await profileRequest(st.socialProfileId, [{ role: 'user', content: 'Reply with exactly: ok' }], 200);
+        const res = (directKey && built?.profile?.['api-url'])
+            ? await directRequest(built, [{ role: 'user', content: 'Reply with exactly: ok' }], 200, directKey)
+            : await profileRequest(st.socialProfileId, [{ role: 'user', content: 'Reply with exactly: ok' }], 200);
         const out = String(res.content || '').trim();
         // Наружу — куда РЕАЛЬНО ушёл запрос (видно, что не основное подключение)
         const where = res.info || built?.info || '?';
