@@ -43,12 +43,19 @@ export const SOMA_STATIONS = [
 ];
 
 // ── Конфиг: ключи API, громкость, включённые источники ──
-let cfg = { jamendoKey: '', ytKey: '', volume: 0.8, sources: { gds: true, jamendo: true, youtube: true } };
+let cfg = { jamendoKey: '', ytKey: '', volume: 0.8, sources: { gds: true, jamendo: true, youtube: true }, moodVocal: 'any', moodLang: 'any' };
 try { cfg = Object.assign(cfg, JSON.parse(localStorage.getItem(LS_CFG) || '{}')); } catch (_) {}
 if (!cfg.sources || typeof cfg.sources !== 'object') cfg.sources = { gds: true, jamendo: true, youtube: true };
+if (!['any', 'vocal', 'instrumental'].includes(cfg.moodVocal)) cfg.moodVocal = 'any';
+if (!['any', 'ru', 'en', 'other'].includes(cfg.moodLang)) cfg.moodLang = 'any';
 
 function saveCfg() { try { localStorage.setItem(LS_CFG, JSON.stringify(cfg)); } catch (_) {} }
-export function getMusicCfg() { return { jamendoKey: cfg.jamendoKey, ytKey: cfg.ytKey, volume: cfg.volume, sources: { ...cfg.sources } }; }
+export function getMusicCfg() { return { jamendoKey: cfg.jamendoKey, ytKey: cfg.ytKey, volume: cfg.volume, sources: { ...cfg.sources }, moodVocal: cfg.moodVocal, moodLang: cfg.moodLang }; }
+// Предпочтения для ✨-подбора под сцену: голос (any|vocal|instrumental), язык (any|ru|en|other)
+export function setMoodPrefs({ vocal, lang } = {}) {
+    if (vocal !== undefined && ['any', 'vocal', 'instrumental'].includes(vocal)) { cfg.moodVocal = vocal; saveCfg(); }
+    if (lang !== undefined && ['any', 'ru', 'en', 'other'].includes(lang)) { cfg.moodLang = lang; saveCfg(); }
+}
 export function setMusicKeys({ jamendoKey, ytKey }) {
     if (jamendoKey !== undefined) cfg.jamendoKey = String(jamendoKey).trim();
     if (ytKey !== undefined) cfg.ytKey = String(ytKey).trim();
@@ -518,7 +525,7 @@ export async function pickForScene() {
     statusMsg = 'Подбираю под сцену…';
     emit();
     try {
-        const arr = await generateSceneMood();
+        const arr = await generateSceneMood({ vocal: cfg.moodVocal, lang: cfg.moodLang });
         const pick = arr?.[0];
         if (!pick?.query) throw new Error('no_pick');
         // Порядок: GDStudio (полные треки, мейнстрим) → Jamendo → YouTube; выключенные тумблерами пропускаем

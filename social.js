@@ -1788,9 +1788,21 @@ Format: [{"store":"exact existing store name","items":[{"name":"Товар","pri
 }
 
 // ── Подбор музыки под текущую сцену ролевой ──
-export async function generateSceneMood() {
+export async function generateSceneMood(prefs = null) {
+    const vocalRule = prefs?.vocal === 'vocal'
+        ? 'The track MUST have vocals and lyrics (a song, not an instrumental).'
+        : prefs?.vocal === 'instrumental'
+            ? 'The track MUST be instrumental — no vocals, no lyrics.'
+            : '';
+    // Язык имеет смысл только когда слова вообще есть
+    const langRule = (prefs?.vocal === 'instrumental') ? '' : (
+        prefs?.lang === 'ru' ? 'The lyrics MUST be in Russian — pick a Russian-language artist and song.'
+        : prefs?.lang === 'en' ? 'The lyrics MUST be in English — pick an English-language artist and song.'
+        : prefs?.lang === 'other' ? 'Pick a song in a language OTHER than Russian or English (e.g. Japanese, French, Korean, German).'
+        : '');
+    const prefBlock = [vocalRule, langRule].filter(Boolean).join('\n');
     const prompt = `${await taskHeader(`pick ONE music track that fits the current roleplay scene — its mood, tempo and atmosphere.`)}
-The track must be REAL and easy to find on streaming services: well-known enough, correct exact artist and title. Match the genre and language to the scene and setting; if a specific song is playing or mentioned in the scene, prefer it.
+The track must be REAL and easy to find on streaming services: well-known enough, correct exact artist and title. Match the genre and language to the scene and setting; if a specific song is playing or mentioned in the scene, prefer it.${prefBlock ? '\n' + prefBlock : ''}
 "query" = "Artist - Title" for a search engine. "mood" = 2-4 words describing the scene's mood.
 ${uiLangLine()}
 ${JSON_RULES}
