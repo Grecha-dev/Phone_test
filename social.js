@@ -1,4 +1,4 @@
-import { generateRaw, user_avatar, getThumbnailUrl, saveSettingsDebounced } from '../../../../script.js';
+import { generateRaw, user_avatar, getThumbnailUrl, saveSettingsDebounced, getRequestHeaders } from '../../../../script.js';
 import { saveBase64AsFile } from '../../../utils.js';
 import { extensionNames, extension_settings } from '../../../extensions.js';
 import { getMeta, saveMeta, keyOf, scanChat, getSettings, stripThink, textMentionsName, stripHandle, isBanned, displayName, getRpDateTime, extractTemporalContext, isUserName } from './state.js';
@@ -1074,10 +1074,61 @@ async function profileRequest(profileId, messages, maxTokens) {
     }
     const built = profileInfo(profileId);
     if (!built) throw new Error(`Профиль подключения не найден: ${profileId}`);
-    const res = await cm.sendRequest(profileId, messages, maxTokens, {
-        stream: false, extractData: true, includePreset: false, includeInstruct: false,
-    });
-    return { content: await extractGeneratedText(res), info: `${built.info} · Connection Manager` };
+
+    // Сервер ST берёт ключ из АКТИВНОГО секрета источника, а не из профиля —
+    // поэтому профиль «работал» только когда чат стоял на нём же. Крутим
+    // секрет на профильный перед запросом и возвращаем обратно после.
+    const secretId = built.profile['secret-id'];
+    const secretKey = secretKeyForApi(built.profile.api);
+    let prevSecretId = null;
+    let rotated = false;
+    if (secretId && secretKey) {
+        prevSecretId = await getActiveSecretId(secretKey);
+        if (prevSecretId && prevSecretId !== secretId) {
+            rotated = await rotateSecretServerOnly(secretKey, secretId);
+            if (rotated) logReq('секрет', `переключили на профильный для ${secretKey}`);
+        }
+    }
+
+    try {
+        const res = await cm.sendRequest(profileId, messages, maxTokens, {
+            stream: false, extractData: true, includePreset: false, includeInstruct: false,
+        });
+        return { content: await extractGeneratedText(res), info: `${built.info} · Connection Manager` };
+    } finally {
+        if (rotated && prevSecretId) {
+            rotateSecretServerOnly(secretKey, prevSecretId).catch(() => {});
+        }
+    }
+}
+
+// api источника → имя ключа в secrets.json (у google ключ исторически makersuite)
+const API_TO_SECRET_KEY = { google: 'api_key_makersuite', vertexai: 'api_key_vertexai_serviceaccount' };
+function secretKeyForApi(api) {
+    const a = String(api || '').toLowerCase().trim();
+    if (!a) return null;
+    return API_TO_SECRET_KEY[a] || `api_key_${a}`;
+}
+
+async function getActiveSecretId(secretKey) {
+    try {
+        const res = await fetch('/api/secrets/read', { method: 'POST', headers: getRequestHeaders() });
+        if (!res.ok) return null;
+        const state = await res.json();
+        const list = state?.[secretKey];
+        return Array.isArray(list) ? (list.find(x => x?.active)?.id || null) : null;
+    } catch { return null; }
+}
+
+async function rotateSecretServerOnly(secretKey, secretId) {
+    try {
+        const res = await fetch('/api/secrets/rotate', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ key: secretKey, id: secretId }),
+        });
+        return res.ok;
+    } catch { return false; }
 }
 
 // prefill: строка-начало ответа (учитывается только при включённой опции).
